@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlcmd:*)",
+      "Bash(powershell:*)",
+      "Bash(if not exist \"C:\\\\temp\" mkdir \"C:\\\\temp\")",
+      "Bash(dir:*)",
+      "Bash(cmd /c \"dir C:\\\\src\\\\pp\\\\dbcc\")"
+    ]
+  }
+}
