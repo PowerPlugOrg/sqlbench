@@ -117,6 +117,49 @@ function Test-Admin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Invoke-Elevated {
+    param(
+        [string]$Action,
+        [string]$SessionName,
+        [string]$OutputPath,
+        [int]$BufferSizeMB,
+        [string]$TraceLevel,
+        [int]$SampleIntervalSec
+    )
+
+    # Build arguments for the elevated process
+    $scriptPath = $MyInvocation.ScriptName
+    if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+
+    $arguments = @(
+        "-ExecutionPolicy", "Bypass",
+        "-NoProfile",
+        "-File", "`"$scriptPath`"",
+        "-Action", $Action,
+        "-SessionName", $SessionName,
+        "-OutputPath", "`"$OutputPath`"",
+        "-BufferSizeMB", $BufferSizeMB,
+        "-TraceLevel", $TraceLevel,
+        "-SampleIntervalSec", $SampleIntervalSec
+    )
+
+    Write-Host "Elevating to Administrator..." -ForegroundColor Yellow
+
+    try {
+        $process = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList $arguments `
+            -Verb RunAs `
+            -Wait `
+            -PassThru
+
+        return $process.ExitCode
+    } catch {
+        Write-Host "ERROR: Failed to elevate. Please run as Administrator manually." -ForegroundColor Red
+        Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+        return 1
+    }
+}
+
 function Test-NvidiaSmi {
     $nvidiaSmi = Get-Command "nvidia-smi" -ErrorAction SilentlyContinue
     if ($nvidiaSmi) { return $true }
@@ -442,9 +485,9 @@ switch ($Action) {
         Show-Header "Creating Power Trace Session: $SessionName"
 
         if (-not (Test-Admin)) {
-            Write-Host "ERROR: This operation requires Administrator privileges" -ForegroundColor Red
-            Write-Host "Please run PowerShell as Administrator"
-            exit 1
+            $exitCode = Invoke-Elevated -Action $Action -SessionName $SessionName -OutputPath $OutputPath `
+                -BufferSizeMB $BufferSizeMB -TraceLevel $TraceLevel -SampleIntervalSec $SampleIntervalSec
+            exit $exitCode
         }
 
         # Ensure output directory exists
@@ -483,8 +526,9 @@ switch ($Action) {
         Show-Header "Starting Power Trace Session: $SessionName"
 
         if (-not (Test-Admin)) {
-            Write-Host "ERROR: This operation requires Administrator privileges" -ForegroundColor Red
-            exit 1
+            $exitCode = Invoke-Elevated -Action $Action -SessionName $SessionName -OutputPath $OutputPath `
+                -BufferSizeMB $BufferSizeMB -TraceLevel $TraceLevel -SampleIntervalSec $SampleIntervalSec
+            exit $exitCode
         }
 
         # Ensure output directory
@@ -601,8 +645,9 @@ switch ($Action) {
         Show-Header "Stopping Power Trace Session: $SessionName"
 
         if (-not (Test-Admin)) {
-            Write-Host "ERROR: This operation requires Administrator privileges" -ForegroundColor Red
-            exit 1
+            $exitCode = Invoke-Elevated -Action $Action -SessionName $SessionName -OutputPath $OutputPath `
+                -BufferSizeMB $BufferSizeMB -TraceLevel $TraceLevel -SampleIntervalSec $SampleIntervalSec
+            exit $exitCode
         }
 
         # Create stop signal for background jobs
@@ -967,8 +1012,9 @@ switch ($Action) {
         Show-Header "Cleaning Up Power Trace Session: $SessionName"
 
         if (-not (Test-Admin)) {
-            Write-Host "ERROR: This operation requires Administrator privileges" -ForegroundColor Red
-            exit 1
+            $exitCode = Invoke-Elevated -Action $Action -SessionName $SessionName -OutputPath $OutputPath `
+                -BufferSizeMB $BufferSizeMB -TraceLevel $TraceLevel -SampleIntervalSec $SampleIntervalSec
+            exit $exitCode
         }
 
         # Create stop signal

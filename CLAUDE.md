@@ -72,6 +72,7 @@ Control SQL Server Extended Events (XEvents) tracing for performance analysis.
 - `start` - Start the trace session
 - `stop` - Stop the trace session
 - `read` - Analyze and display trace results
+- `export` - Export raw trace data to CSV or JSON (`-Format csv` or `-Format json`)
 - `cleanup` - Stop session and remove trace files
 - `auto` - Full workflow: create, start, prompt for benchmark, stop, read
 
@@ -82,19 +83,102 @@ Control SQL Server Extended Events (XEvents) tracing for performance analysis.
 /trace start              # start tracing
 /trace stop               # stop tracing
 /trace read               # analyze captured events
+/trace export             # export raw data to CSV (default) or JSON
 /trace cleanup            # clean up session and files
 /trace auto               # full automated workflow with benchmark
 ```
 
 **Captured Events:**
-- `sql_statement_completed` - Query execution with duration, CPU, reads
-- `rpc_completed` - Parameterized query execution
-- `wait_completed` - Wait statistics (>1ms)
-- `lock_acquired` - Lock contention (exclusive+)
-- `error_reported` - Errors (severity >= 11)
+
+| Category | Events |
+|----------|--------|
+| Query Execution | sql_statement_completed, rpc_completed, sql_batch_completed, sp_statement_completed |
+| CPU Events | query_post_compilation_showplan, sql_statement_recompile, degree_of_parallelism, auto_stats |
+| I/O Events | page_split, checkpoint_begin/end, log_flush_start, file_read/write_completed |
+| Memory Events | memory_grant_updated, sort_warning, hash_warning, exchange_spill |
+| Wait/Contention | wait_completed, lock_acquired, lock_escalation, latch_suspend_end, blocked_process_report |
+| Errors | error_reported, attention (timeouts) |
+
+**Metrics Captured:**
+- duration, cpu_time, logical_reads, physical_reads, writes, row_count
+- query_hash, query_plan_hash, plan_handle
+- wait_type, dop (parallelism degree), lock_mode
 
 **Script location:** `C:\src\pp\dbcc\xevents-trace.ps1`
 **Trace output:** `C:\temp\BenchmarkTrace.xel`
+
+### Trace Analysis
+
+Offline analysis of exported XEvents trace CSV data. Supports pattern detection and ML feature extraction.
+
+**Usage:**
+```
+powershell -ExecutionPolicy Bypass -File trace-analyze.ps1 -Action patterns
+powershell -ExecutionPolicy Bypass -File trace-analyze.ps1 -Action features
+```
+
+**Parameters:**
+- `-Action` - Analysis action: `patterns` (default), `features`
+- `-InputFile` - Path to CSV export (default: auto-detects latest `BenchmarkTrace-export-*.csv` in `C:\temp`)
+- `-MinSequenceLength` - Minimum n-gram length (default: 2) *(patterns only)*
+- `-MaxSequenceLength` - Maximum n-gram length (default: 10) *(patterns only)*
+- `-MinOccurrences` - Minimum times a pattern must repeat (default: 2) *(patterns only)*
+- `-OutputPath` - Output directory (default: `C:\temp`)
+- `-IncludeStringLiterals` - Include raw string literal content in features output *(features only)*
+
+**Examples:**
+```
+powershell -File trace-analyze.ps1 -Action patterns                          # auto-detect latest CSV
+powershell -File trace-analyze.ps1 -Action patterns -MinSequenceLength 3     # require longer sequences
+powershell -File trace-analyze.ps1 -Action patterns -InputFile C:\temp\BenchmarkTrace-export-20260130-101654.csv
+powershell -File trace-analyze.ps1 -Action features                          # ML feature export
+powershell -File trace-analyze.ps1 -Action features -IncludeStringLiterals   # include string literal content
+```
+
+**Algorithm (`patterns` action):**
+1. Import CSV, filter to `sql_statement_completed` and `sql_batch_completed` events
+2. Group by `session_id`, order by timestamp within each session
+3. Normalize SQL text (replace numeric/string/GUID literals with `?`, collapse whitespace)
+4. Build sliding-window n-grams (size 2..MaxSequenceLength) per session
+5. Aggregate n-gram frequency across all sessions
+6. Remove subsumed shorter patterns that are contiguous sub-sequences of longer ones
+7. Report patterns sorted by frequency
+
+**Algorithm (`features` action):**
+1. Import CSV, separate into statement events (`sql_statement_completed`) and non-statement events (`wait_completed`, `latch_suspend_end`, `page_split`)
+2. Index non-statement events by `session_id`, sorted by timestamp
+3. For each session, sort statements by timestamp and assign ordinal position
+4. Compute `inter_arrival_us` (gap since previous statement in same session)
+5. Extract numeric and string literals from original SQL text before normalization
+6. Correlate non-statement events in the time window between previous and current statement
+7. Export flat CSV with one row per statement, including all metrics and correlated events
+
+**Features CSV Columns:**
+
+| Category | Columns |
+|----------|---------|
+| Identity | `row_id`, `session_id`, `event_timestamp`, `normalized_sql`, `query_hash`, `query_plan_hash`, `ordinal` |
+| Performance | `duration_us`, `cpu_time_us`, `logical_reads`, `physical_reads`, `writes`, `row_count` |
+| Session context | `inter_arrival_us` |
+| SQL literals | `numeric_literals` (JSON), `string_literal_count`, `string_literal_lengths` (JSON), `string_literals` (JSON, with `-IncludeStringLiterals`) |
+| Correlated events | `wait_count`, `wait_total_us`, `wait_types` (JSON), `latch_count`, `latch_total_us`, `page_split_count` |
+
+**Output:**
+- `patterns`: Console report + `C:\temp\BenchmarkTrace-patterns-YYYYMMDD-HHmmss.json`
+- `features`: Console summary + `C:\temp\BenchmarkTrace-features-YYYYMMDD-HHmmss.csv`
+
+**Prerequisites:** Requires a CSV export from `/trace export`. Typical workflow:
+```
+/trace create    # create XEvents session
+/trace start     # start tracing
+/benchmark mixed # run workload
+/trace stop      # stop tracing
+/trace export    # export to CSV
+# then run trace-analyze.ps1 -Action patterns
+# or   trace-analyze.ps1 -Action features
+```
+
+**Script location:** `C:\src\pp\dbcc\trace-analyze.ps1`
 
 ### /power-trace
 

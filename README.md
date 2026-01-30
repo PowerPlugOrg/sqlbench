@@ -125,18 +125,65 @@ Control SQL Server Extended Events (XEvents) tracing for query performance analy
 
 #### Captured Events
 
+**Query Execution:**
 | Event | Data Captured |
 |-------|---------------|
-| `sql_statement_completed` | Duration, CPU time, logical/physical reads |
-| `rpc_completed` | Parameterized query execution |
-| `wait_completed` | Wait statistics (waits > 1ms) |
-| `lock_acquired` | Lock contention (exclusive locks and above) |
-| `error_reported` | Errors with severity >= 11 |
+| `sql_statement_completed` | Duration, CPU, reads, writes, row_count, query_hash |
+| `rpc_completed` | Parameterized/stored procedure calls |
+| `sql_batch_completed` | Batch-level timing |
+| `sp_statement_completed` | Individual statements in stored procedures |
+
+**CPU Events:**
+| Event | Data Captured |
+|-------|---------------|
+| `query_post_compilation_showplan` | Query compilation (CPU intensive) |
+| `sql_statement_recompile` | Recompilation events (CPU spikes) |
+| `degree_of_parallelism` | Parallel query execution (DOP) |
+| `auto_stats` | Statistics updates |
+
+**I/O Events:**
+| Event | Data Captured |
+|-------|---------------|
+| `page_split` | Index fragmentation causing extra I/O |
+| `checkpoint_begin/end` | Checkpoint I/O activity |
+| `log_flush_start` | Transaction log writes |
+| `file_read/write_completed` | File I/O operations (>10ms) |
+
+**Memory Events:**
+| Event | Data Captured |
+|-------|---------------|
+| `sort_warning` | Sort spilling to tempdb |
+| `hash_warning` | Hash spilling to tempdb |
+| `exchange_spill` | Parallel query memory spills |
+| `memory_grant_updated` | Memory grant changes |
+
+**Wait & Contention:**
+| Event | Data Captured |
+|-------|---------------|
+| `wait_completed` | Wait statistics (>1ms) |
+| `lock_acquired` | Exclusive+ lock acquisitions |
+| `lock_escalation` | Lock escalation events |
+| `latch_suspend_end` | Buffer pool contention |
+| `blocked_process_report` | Long blocking events |
+
+**Errors:**
+| Event | Data Captured |
+|-------|---------------|
+| `error_reported` | Errors severity >= 11 |
+| `attention` | Query cancellation/timeout |
 
 #### Output
 
 - **Trace file**: `C:\temp\BenchmarkTrace.xel`
-- **Analysis**: Top queries by duration, execution counts, I/O statistics
+- **Analysis sections**:
+  - Event overview (all event types and counts)
+  - Query execution (top queries by duration, CPU, I/O)
+  - CPU events (compilations, parallelism, stats updates)
+  - I/O events (page splits, checkpoints, log flushes)
+  - Memory events (spills to tempdb)
+  - Wait statistics (top wait types)
+  - Lock contention (escalations, blocking)
+  - Summary (total queries, CPU, I/O)
 
 ---
 

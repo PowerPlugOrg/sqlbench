@@ -5,7 +5,13 @@
       "Bash(powershell:*)",
       "Bash(if not exist \"C:\\\\temp\" mkdir \"C:\\\\temp\")",
       "Bash(dir:*)",
-      "Bash(cmd /c \"dir C:\\\\src\\\\pp\\\\dbcc\")"
+      "Bash(cmd /c \"dir C:\\\\src\\\\pp\\\\dbcc\")",
+      "Bash(Select-Object -First 30)",
+      "Bash(awk:*)",
+      "Read(C:\\temp\\*)",
+      "Write(C:\\temp\\*)",
+      "Edit(C:\\temp\\*)",
+      "Bash(echo:*)"
     ]
   }
 }
