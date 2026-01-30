@@ -2,6 +2,19 @@
 
 A comprehensive toolkit for benchmarking SQL Server performance and analyzing power consumption on Windows servers.
 
+## What's Here
+
+| Capability | Scripts / Commands | Status |
+|---|---|---|
+| **Benchmark execution** | `benchmark.ps1`, `/benchmark`, `/full-benchmark` | Done |
+| **SQL Server XEvents tracing** | `xevents-trace.ps1`, `/trace` | Done |
+| **Windows ETW power tracing** | `etw-power-trace.ps1`, `/power-trace` | Done |
+| **Trace export to CSV** | `xevents-trace.ps1 -Action export` | Done |
+| **Sequence pattern detection** | `trace-analyze.ps1 -Action patterns` | Done |
+| **ML feature extraction** | `trace-analyze.ps1 -Action features` | Done |
+
+Output defaults to `./tmp` (override with `-OutputPath` or `$env:DBCC_TEMP`).
+
 ## Overview
 
 This toolkit provides three integrated commands for performance and power analysis:
