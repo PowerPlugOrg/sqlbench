@@ -5,13 +5,26 @@ param(
     [string]$Action,
 
     [string]$SessionName = "BenchmarkTrace",
-    [string]$OutputPath = "C:\temp",
+    [string]$OutputPath = $null,
     [int]$MaxFileSizeMB = 100,
     [int]$TopQueries = 50,
 
     [ValidateSet("csv", "json")]
     [string]$Format = "csv"
 )
+
+# Resolve OutputPath: -OutputPath arg > $env:DBCC_TEMP > ./tmp
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:DBCC_TEMP)) {
+        $OutputPath = $env:DBCC_TEMP
+    } else {
+        $OutputPath = Join-Path $PSScriptRoot "tmp"
+    }
+}
+$OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+if (-not (Test-Path $OutputPath)) {
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+}
 
 $server = "TOMER-BOOK3\SQLEXPRESS"
 $database = "BenchmarkTest"

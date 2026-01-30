@@ -8,9 +8,22 @@ param(
     [int]$MinSequenceLength = 2,
     [int]$MaxSequenceLength = 10,
     [int]$MinOccurrences = 2,
-    [string]$OutputPath = "C:\temp",
+    [string]$OutputPath = $null,
     [switch]$IncludeStringLiterals
 )
+
+# Resolve OutputPath: -OutputPath arg > $env:DBCC_TEMP > ./tmp
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:DBCC_TEMP)) {
+        $OutputPath = $env:DBCC_TEMP
+    } else {
+        $OutputPath = Join-Path $PSScriptRoot "tmp"
+    }
+}
+$OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+if (-not (Test-Path $OutputPath)) {
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+}
 
 function Show-Header {
     param([string]$title)

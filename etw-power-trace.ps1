@@ -7,12 +7,25 @@ param(
     [string]$Action,
 
     [string]$SessionName = "PowerActivityTrace",
-    [string]$OutputPath = "C:\temp",
+    [string]$OutputPath = $null,
     [int]$BufferSizeMB = 64,
     [ValidateSet("all", "power", "cpu", "io", "network")]
     [string]$TraceLevel = "all",
     [int]$SampleIntervalSec = 1
 )
+
+# Resolve OutputPath: -OutputPath arg > $env:DBCC_TEMP > ./tmp
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($env:DBCC_TEMP)) {
+        $OutputPath = $env:DBCC_TEMP
+    } else {
+        $OutputPath = Join-Path $PSScriptRoot "tmp"
+    }
+}
+$OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+if (-not (Test-Path $OutputPath)) {
+    New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+}
 
 $etlFile = Join-Path $OutputPath "$SessionName.etl"
 $perfCsvFile = Join-Path $OutputPath "$SessionName-perfcounters.csv"

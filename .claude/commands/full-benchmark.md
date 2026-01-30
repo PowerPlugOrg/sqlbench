@@ -75,5 +75,5 @@ After all steps complete, provide a CONCISE summary with:
 
 - Power tracing requires Administrator privileges
 - If power tracing fails, SQL tracing and benchmark will still run
-- All trace files are written to `C:\temp\`
+- All trace files are written to the output directory (`$env:DBCC_TEMP` or `./tmp`)
 - For "all" type, spawn separate agents for each benchmark type

@@ -4,6 +4,7 @@
 
 - **Machine:** TOMER-BOOK3
 - **Platform:** Windows
+- **Temp/output directory:** `$env:DBCC_TEMP` or `./tmp` (all scripts auto-create if missing)
 
 ## Database Connections
 
@@ -105,7 +106,7 @@ Control SQL Server Extended Events (XEvents) tracing for performance analysis.
 - wait_type, dop (parallelism degree), lock_mode
 
 **Script location:** `C:\src\pp\dbcc\xevents-trace.ps1`
-**Trace output:** `C:\temp\BenchmarkTrace.xel`
+**Trace output:** `./tmp/BenchmarkTrace.xel`
 
 ### Trace Analysis
 
@@ -119,18 +120,18 @@ powershell -ExecutionPolicy Bypass -File trace-analyze.ps1 -Action features
 
 **Parameters:**
 - `-Action` - Analysis action: `patterns` (default), `features`
-- `-InputFile` - Path to CSV export (default: auto-detects latest `BenchmarkTrace-export-*.csv` in `C:\temp`)
+- `-InputFile` - Path to CSV export (default: auto-detects latest `BenchmarkTrace-export-*.csv` in output dir)
 - `-MinSequenceLength` - Minimum n-gram length (default: 2) *(patterns only)*
 - `-MaxSequenceLength` - Maximum n-gram length (default: 10) *(patterns only)*
 - `-MinOccurrences` - Minimum times a pattern must repeat (default: 2) *(patterns only)*
-- `-OutputPath` - Output directory (default: `C:\temp`)
+- `-OutputPath` - Output directory (default: `$env:DBCC_TEMP` or `./tmp`)
 - `-IncludeStringLiterals` - Include raw string literal content in features output *(features only)*
 
 **Examples:**
 ```
 powershell -File trace-analyze.ps1 -Action patterns                          # auto-detect latest CSV
 powershell -File trace-analyze.ps1 -Action patterns -MinSequenceLength 3     # require longer sequences
-powershell -File trace-analyze.ps1 -Action patterns -InputFile C:\temp\BenchmarkTrace-export-20260130-101654.csv
+powershell -File trace-analyze.ps1 -Action patterns -InputFile ./tmp/BenchmarkTrace-export-20260130-101654.csv
 powershell -File trace-analyze.ps1 -Action features                          # ML feature export
 powershell -File trace-analyze.ps1 -Action features -IncludeStringLiterals   # include string literal content
 ```
@@ -164,8 +165,8 @@ powershell -File trace-analyze.ps1 -Action features -IncludeStringLiterals   # i
 | Correlated events | `wait_count`, `wait_total_us`, `wait_types` (JSON), `latch_count`, `latch_total_us`, `page_split_count` |
 
 **Output:**
-- `patterns`: Console report + `C:\temp\BenchmarkTrace-patterns-YYYYMMDD-HHmmss.json`
-- `features`: Console summary + `C:\temp\BenchmarkTrace-features-YYYYMMDD-HHmmss.csv`
+- `patterns`: Console report + `./tmp/BenchmarkTrace-patterns-YYYYMMDD-HHmmss.json`
+- `features`: Console summary + `./tmp/BenchmarkTrace-features-YYYYMMDD-HHmmss.csv`
 
 **Prerequisites:** Requires a CSV export from `/trace export`. Typical workflow:
 ```
@@ -242,11 +243,11 @@ Comprehensive power consumption analysis for servers (requires Admin). Captures 
 - System: Context Switches/sec, Processor Queue Length
 
 **Output Files:**
-- `C:\temp\PowerActivityTrace.etl` - ETW events (open in WPA)
-- `C:\temp\PowerActivityTrace-perfcounters.csv` - Performance counter samples
-- `C:\temp\PowerActivityTrace-rapl.csv` - Intel RAPL power readings
-- `C:\temp\PowerActivityTrace-gpu.csv` - NVIDIA GPU metrics
-- `C:\temp\PowerActivityTrace-ipmi.csv` - IPMI/BMC sensor readings
+- `./tmp/PowerActivityTrace.etl` - ETW events (open in WPA)
+- `./tmp/PowerActivityTrace-perfcounters.csv` - Performance counter samples
+- `./tmp/PowerActivityTrace-rapl.csv` - Intel RAPL power readings
+- `./tmp/PowerActivityTrace-gpu.csv` - NVIDIA GPU metrics
+- `./tmp/PowerActivityTrace-ipmi.csv` - IPMI/BMC sensor readings
 
 **Script location:** `C:\src\pp\dbcc\etw-power-trace.ps1`
 

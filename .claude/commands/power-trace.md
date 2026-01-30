@@ -117,7 +117,7 @@ For comprehensive analysis:
 
 ### Output Files
 
-All files are written to `C:\temp\`:
+All files are written to the output directory (`$env:DBCC_TEMP` or `./tmp`):
 
 | File | Description |
 |------|-------------|

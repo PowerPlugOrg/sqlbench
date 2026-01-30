@@ -174,7 +174,7 @@ Control SQL Server Extended Events (XEvents) tracing for query performance analy
 
 #### Output
 
-- **Trace file**: `C:\temp\BenchmarkTrace.xel`
+- **Trace file**: `./tmp/BenchmarkTrace.xel`
 - **Analysis sections**:
   - Event overview (all event types and counts)
   - Query execution (top queries by duration, CPU, I/O)
@@ -365,7 +365,7 @@ To modify, edit the `$connectionString` variable in:
 
 ### Output Directory
 
-All trace files are written to `C:\temp\`. Ensure this directory exists and you have write permissions.
+All trace files are written to the output directory (configurable via `-OutputPath`, `$env:DBCC_TEMP`, or defaults to `./tmp`). The directory is auto-created if missing.
 
 ---
 
@@ -422,7 +422,7 @@ For long-running traces, monitor disk space. ETL files can grow quickly with hig
 
 Open `.etl` files in WPA for detailed timeline analysis:
 1. Install Windows Performance Toolkit (part of Windows SDK)
-2. Open `C:\temp\PowerActivityTrace.etl`
+2. Open `./tmp/PowerActivityTrace.etl`
 3. Add graphs for CPU, Disk, Network activity
 
 ### Combining Data Sources

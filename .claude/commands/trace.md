@@ -136,7 +136,7 @@ The export action outputs raw event data with all parsed fields:
 - `sql_text` - Full SQL text
 - `query_hash`, `query_plan_hash` - For query grouping
 
-Output files are written to `C:\temp\` with timestamp:
+Output files are written to the output directory (`$env:DBCC_TEMP` or `./tmp`) with timestamp:
 - CSV: `BenchmarkTrace-export-YYYYMMDD-HHmmss.csv`
 - JSON: `BenchmarkTrace-export-YYYYMMDD-HHmmss.json`
 
