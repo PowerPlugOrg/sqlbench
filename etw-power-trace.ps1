@@ -228,10 +228,29 @@ function Test-IntelRapl {
     return $false
 }
 
+function Get-LhmLibPath {
+    # Find LibreHardwareMonitorLib.dll - check common locations
+    $searchPaths = @(
+        # WinGet install
+        (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages")
+        # Program Files
+        "$env:ProgramFiles\LibreHardwareMonitor"
+        "${env:ProgramFiles(x86)}\LibreHardwareMonitor"
+        # Script directory
+        $PSScriptRoot
+    )
+
+    foreach ($base in $searchPaths) {
+        if (-not $base -or -not (Test-Path $base)) { continue }
+        $found = Get-ChildItem -Path $base -Filter "LibreHardwareMonitorLib.dll" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $null
+}
+
 function Get-LibreHardwareMonitor {
-    # Check for LibreHardwareMonitor (can read RAPL)
-    $lhm = Get-Process -Name "LibreHardwareMonitor" -ErrorAction SilentlyContinue
-    return ($null -ne $lhm)
+    # Check if LibreHardwareMonitorLib.dll is available for direct use
+    return ($null -ne (Get-LhmLibPath))
 }
 
 #endregion
@@ -239,48 +258,53 @@ function Get-LibreHardwareMonitor {
 #region Data Collection Jobs
 
 $raplCollectorScript = {
-    param($OutputFile, $IntervalMs, $StopFile)
+    param($OutputFile, $IntervalMs, $StopFile, $LhmDllPath)
 
-    # This script attempts to read Intel RAPL via WMI or direct MSR access
-    # Requires LibreHardwareMonitor running, or falls back to estimation
+    # Read Intel RAPL directly via LibreHardwareMonitorLib.dll (no GUI/WMI needed)
 
-    $header = "Timestamp,PackagePower_W,CorePower_W,DRAMPower_W,EstimatedTotal_W"
+    $header = "Timestamp,PackagePower_W,CorePower_W,DRAMPower_W,PlatformPower_W"
     $header | Out-File -FilePath $OutputFile -Encoding UTF8
 
-    while (-not (Test-Path $StopFile)) {
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $computer = $null
+    try {
+        Add-Type -Path $LhmDllPath
+        $computer = [LibreHardwareMonitor.Hardware.Computer]::new()
+        $computer.IsCpuEnabled = $true
+        $computer.Open()
 
-        # Try to get power from WMI (if LibreHardwareMonitor exposes it)
-        try {
-            $sensors = Get-WmiObject -Namespace "root\LibreHardwareMonitor" -Class Sensor -ErrorAction SilentlyContinue |
-                Where-Object { $_.SensorType -eq "Power" }
+        # Warm-up read — first sample after Open() is often zero
+        foreach ($hw in $computer.Hardware) { $hw.Update() }
+        Start-Sleep -Milliseconds 500
+        foreach ($hw in $computer.Hardware) { $hw.Update() }
 
-            if ($sensors) {
-                $pkg = ($sensors | Where-Object { $_.Name -match "Package" } | Select-Object -First 1).Value
-                $core = ($sensors | Where-Object { $_.Name -match "Core" -and $_.Name -notmatch "Package" } | Measure-Object -Property Value -Sum).Sum
-                $dram = ($sensors | Where-Object { $_.Name -match "DRAM|Memory" } | Select-Object -First 1).Value
+        while (-not (Test-Path $StopFile)) {
+            foreach ($hw in $computer.Hardware) { $hw.Update() }
 
-                $total = if ($pkg) { $pkg } else { 0 }
-                "$timestamp,$pkg,$core,$dram,$total" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
-            } else {
-                # Fallback: estimate from CPU utilization
-                $cpuLoad = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples[0].CookedValue
-                $tdp = 150  # Assume 150W TDP, adjust as needed
-                $estimatedPower = ($cpuLoad / 100) * $tdp
-                "$timestamp,,,$estimatedPower,$estimatedPower" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+            $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+            $pkg = ""; $core = ""; $dram = ""; $platform = ""
+
+            foreach ($hw in $computer.Hardware) {
+                if ($hw.HardwareType -ne 'Cpu') { continue }
+                foreach ($sensor in $hw.Sensors) {
+                    if ($sensor.SensorType -ne 'Power') { continue }
+                    $val = [math]::Round($sensor.Value, 2)
+                    switch -Wildcard ($sensor.Name) {
+                        "CPU Package"  { $pkg = $val }
+                        "CPU Cores"    { $core = $val }
+                        "CPU Memory"   { $dram = $val }
+                        "CPU Platform" { $platform = $val }
+                    }
+                }
             }
-        } catch {
-            # Fallback estimation
-            try {
-                $cpuLoad = (Get-Counter '\Processor(_Total)\% Processor Time' -ErrorAction SilentlyContinue).CounterSamples[0].CookedValue
-                $estimatedPower = ($cpuLoad / 100) * 150
-                "$timestamp,,,$estimatedPower,$estimatedPower" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
-            } catch {
-                "$timestamp,,,," | Out-File -FilePath $OutputFile -Append -Encoding UTF8
-            }
+
+            "$timestamp,$pkg,$core,$dram,$platform" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+            Start-Sleep -Milliseconds $IntervalMs
         }
-
-        Start-Sleep -Milliseconds $IntervalMs
+    } catch {
+        $errTs = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+        "# ERROR: $($_.Exception.Message)" | Out-File -FilePath $OutputFile -Append -Encoding UTF8
+    } finally {
+        if ($computer) { $computer.Close() }
     }
 }
 
@@ -384,11 +408,14 @@ switch ($Action) {
             Write-Host "  Status:       " -NoNewline
             Write-Host "SUPPORTED (Intel CPU detected)" -ForegroundColor Green
 
-            if (Get-LibreHardwareMonitor) {
-                Write-Host "  Reader:       LibreHardwareMonitor RUNNING" -ForegroundColor Green
+            $lhmDll = Get-LhmLibPath
+            if ($lhmDll) {
+                Write-Host "  Reader:       " -NoNewline
+                Write-Host "LibreHardwareMonitorLib.dll FOUND" -ForegroundColor Green
+                Write-Host "  DLL Path:     $lhmDll"
             } else {
-                Write-Host "  Reader:       LibreHardwareMonitor NOT running" -ForegroundColor Yellow
-                Write-Host "                (Install & run for accurate RAPL readings)"
+                Write-Host "  Reader:       LibreHardwareMonitorLib.dll NOT FOUND" -ForegroundColor Yellow
+                Write-Host "                Install: winget install LibreHardwareMonitor.LibreHardwareMonitor"
             }
         } else {
             Write-Host "  Status:       NOT AVAILABLE (non-Intel or older CPU)" -ForegroundColor Yellow
@@ -598,12 +625,16 @@ switch ($Action) {
             Write-Host "  Using background counter collection..." -ForegroundColor Yellow
         }
 
-        # 3. Start RAPL collection (background job)
+        # 3. Start RAPL collection (background job via LibreHardwareMonitorLib)
         Write-Host "Starting Intel RAPL collection..." -ForegroundColor Yellow
-        if (Test-IntelRapl) {
+        $lhmDll = Get-LhmLibPath
+        if (Test-IntelRapl -and $lhmDll) {
             $intervalMs = $SampleIntervalSec * 1000
-            Start-Job -Name "$SessionName-RAPL" -ScriptBlock $raplCollectorScript -ArgumentList $raplCsvFile, $intervalMs, $stopFile | Out-Null
-            Write-Host "  RAPL collection started" -ForegroundColor Green
+            Start-Job -Name "$SessionName-RAPL" -ScriptBlock $raplCollectorScript -ArgumentList $raplCsvFile, $intervalMs, $stopFile, $lhmDll | Out-Null
+            Write-Host "  RAPL collection started (via LibreHardwareMonitorLib)" -ForegroundColor Green
+        } elseif (Test-IntelRapl) {
+            Write-Host "  Intel CPU detected but LibreHardwareMonitorLib.dll not found" -ForegroundColor Yellow
+            Write-Host "  Install LibreHardwareMonitor: winget install LibreHardwareMonitor.LibreHardwareMonitor" -ForegroundColor Yellow
         } else {
             Write-Host "  RAPL not available (non-Intel CPU)" -ForegroundColor Yellow
         }
@@ -854,33 +885,35 @@ switch ($Action) {
             Write-Host "-" * 60
 
             try {
-                $raplData = Import-Csv $raplCsvFile -ErrorAction SilentlyContinue
+                $raplData = Import-Csv $raplCsvFile -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Timestamp -and $_.Timestamp -notmatch "^#" }
 
                 if ($raplData -and $raplData.Count -gt 0) {
-                    $pkgPower = $raplData | Where-Object { $_.PackagePower_W } | ForEach-Object { [double]$_.PackagePower_W }
-                    $dramPower = $raplData | Where-Object { $_.DRAMPower_W } | ForEach-Object { [double]$_.DRAMPower_W }
-                    $estPower = $raplData | Where-Object { $_.EstimatedTotal_W } | ForEach-Object { [double]$_.EstimatedTotal_W }
-
                     Write-Host "Samples: $($raplData.Count)"
 
-                    if ($pkgPower -and $pkgPower.Count -gt 0) {
-                        $avg = ($pkgPower | Measure-Object -Average).Average
-                        $max = ($pkgPower | Measure-Object -Maximum).Maximum
-                        Write-Host ("Package Power:   Avg: {0:N1} W   Max: {1:N1} W" -f $avg, $max)
+                    $domains = @(
+                        @{ Col = "PackagePower_W";  Label = "Package Power" }
+                        @{ Col = "CorePower_W";     Label = "Core Power" }
+                        @{ Col = "DRAMPower_W";     Label = "DRAM Power" }
+                        @{ Col = "PlatformPower_W"; Label = "Platform Power (PSys)" }
+                    )
+
+                    foreach ($d in $domains) {
+                        $values = $raplData | Where-Object { $_.$($d.Col) -and $_.$($d.Col) -ne "0" } |
+                            ForEach-Object { [double]$_.$($d.Col) }
+                        if ($values -and $values.Count -gt 0) {
+                            $avg = ($values | Measure-Object -Average).Average
+                            $max = ($values | Measure-Object -Maximum).Maximum
+                            Write-Host ("{0,-22} Avg: {1:N1} W   Max: {2:N1} W" -f "$($d.Label):", $avg, $max)
+                        }
                     }
 
-                    if ($dramPower -and $dramPower.Count -gt 0) {
-                        $avg = ($dramPower | Measure-Object -Average).Average
-                        $max = ($dramPower | Measure-Object -Maximum).Maximum
-                        Write-Host ("DRAM Power:      Avg: {0:N1} W   Max: {1:N1} W" -f $avg, $max)
-                    }
-
-                    if ($estPower -and $estPower.Count -gt 0) {
-                        $avg = ($estPower | Measure-Object -Average).Average
-                        $max = ($estPower | Measure-Object -Maximum).Maximum
-                        $total = ($estPower | Measure-Object -Sum).Sum * ($SampleIntervalSec / 3600)  # Wh
-                        Write-Host ("Estimated Total: Avg: {0:N1} W   Max: {1:N1} W" -f $avg, $max)
-                        Write-Host ("Energy Used:     {0:N2} Wh" -f $total)
+                    # Energy estimate from Package power
+                    $pkgValues = $raplData | Where-Object { $_.PackagePower_W -and $_.PackagePower_W -ne "0" } |
+                        ForEach-Object { [double]$_.PackagePower_W }
+                    if ($pkgValues -and $pkgValues.Count -gt 0) {
+                        $energyWh = ($pkgValues | Measure-Object -Sum).Sum * ($SampleIntervalSec / 3600)
+                        Write-Host ("Energy (Package):      {0:N3} Wh" -f $energyWh)
                     }
                 }
             } catch {

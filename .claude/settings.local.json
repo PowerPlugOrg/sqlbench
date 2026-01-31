@@ -1,5 +1,8 @@
 {
   "permissions": {
+    "deny": [
+      "Bash(git push:*)"
+    ],
     "allow": [
       "Bash(sqlcmd:*)",
       "Bash(powershell:*)",
@@ -11,7 +14,14 @@
       "Read(C:\\temp\\*)",
       "Write(C:\\temp\\*)",
       "Edit(C:\\temp\\*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(ls:*)",
+      "Bash(Get-ChildItem -Recurse -Filter \"*perfcounters*.csv\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 5 FullName)",
+      "Read(C:\\src\\pp\\dbcc\\*)",
+      "Write(C:\\src\\pp\\dbcc\\*)",
+      "Edit(C:\\src\\pp\\dbcc\\*)",
+      "Bash(*)"
     ]
   }
 }

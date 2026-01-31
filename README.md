@@ -12,6 +12,8 @@ A comprehensive toolkit for benchmarking SQL Server performance and analyzing po
 | **Trace export to CSV** | `xevents-trace.ps1 -Action export` | Done |
 | **Sequence pattern detection** | `trace-analyze.ps1 -Action patterns` | Done |
 | **ML feature extraction** | `trace-analyze.ps1 -Action features` | Done |
+| **ETW feature extraction** | `etw-analyze.ps1 -Action features` | Done |
+| **Power model features** | `etw-analyze.ps1 -Action power-model` | Done |
 
 Output defaults to `./tmp` (override with `-OutputPath` or `$env:DBCC_TEMP`).
 
@@ -320,11 +322,83 @@ System:  Context Switches/sec, Processor Queue Length
 /trace read          # SQL query performance analysis
 ```
 
+### Power Model Training Data
+
+```powershell
+# Collect training data (requires RAPL-capable hardware)
+/power-trace start
+/benchmark mixed 1000 20
+/power-trace stop
+
+# Extract features (one row per perf counter sample)
+powershell -File etw-analyze.ps1 -Action power-model
+```
+
+Output: `PowerModel-features-*.csv` with perf counters as features and RAPL readings as labels. If no RAPL file is found, label columns are omitted (inference mode).
+
 ### Automated Workflow
 
 ```powershell
 /trace auto          # Prompts for benchmark parameters, runs everything
 ```
+
+---
+
+## Analysis Scripts
+
+### etw-analyze.ps1
+
+Two actions for ML feature extraction:
+
+#### `-Action features` (SQL-aligned)
+
+One row per SQL statement, enriched with the nearest perf counter sample and ETW events. Joinable with SQL features CSV on `row_id`.
+
+```powershell
+powershell -File etw-analyze.ps1 -Action features
+```
+
+#### `-Action power-model` (time-series)
+
+One row per perf counter sample for power consumption modeling. Designed for training on dev/test machines (where RAPL is available) and deploying on production (perf counters only).
+
+```powershell
+powershell -File etw-analyze.ps1 -Action power-model
+```
+
+**Inputs (auto-detected):**
+
+| Input | Required | Source |
+|-------|----------|--------|
+| Perf counters CSV | Yes | `/power-trace stop` |
+| ETL file | No | `/power-trace stop` |
+| RAPL CSV | No | `/power-trace stop` (Intel RAPL hardware) |
+
+**Parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-PerfCountersFile` | Perf counters CSV path | auto-detect |
+| `-EtlFile` | ETL file path | auto-detect |
+| `-RaplFile` | RAPL CSV path (label source) | auto-detect |
+| `-MinEventCount` | Min occurrences for an ETW event type to get its own column | `5` |
+| `-OutputPath` | Output directory | `$env:DBCC_TEMP` or `./tmp` |
+
+**Output columns:**
+
+| Category | Columns |
+|----------|---------|
+| Identity | `sample_idx`, `timestamp` |
+| CPU | `cpu_pct`, `cpu_idle_pct`, `cpu_privileged_pct`, `cpu_user_pct`, `cpu_c1_pct`, `cpu_c2_pct`, `cpu_c3_pct`, `cpu_freq_mhz`, `cpu_freq_max_pct` |
+| Memory | `mem_available_mb`, `mem_pages_sec`, `mem_cache_faults_sec` |
+| Disk | `disk_reads_sec`, `disk_writes_sec`, `disk_bytes_sec`, `disk_queue_len`, `disk_idle_pct` |
+| Network | `net_bytes_sec`, `net_packets_sec` |
+| System | `ctx_switches_sec`, `proc_queue_len` |
+| Derived | `cpu_busy_pct`, `disk_iops` |
+| ETW (dynamic) | `etw_{event_name}` per type, `etw_other`, `etw_total` |
+| Labels (optional) | `rapl_package_w`, `rapl_core_w`, `rapl_dram_w`, `rapl_estimated_w`, `rapl_offset_ms` |
+
+ETW columns appear only when an ETL file is found. Label columns appear only when a RAPL file is found.
 
 ---
 
@@ -422,6 +496,7 @@ For long-running traces, monitor disk space. ETL files can grow quickly with hig
 | `benchmark.ps1` | SQL Server benchmark script |
 | `xevents-trace.ps1` | SQL Server XEvents tracing script |
 | `etw-power-trace.ps1` | Windows ETW power tracing script |
+| `etw-analyze.ps1` | ETW feature extraction and power model features |
 | `.claude/commands/benchmark.md` | Claude Code /benchmark command |
 | `.claude/commands/trace.md` | Claude Code /trace command |
 | `.claude/commands/power-trace.md` | Claude Code /power-trace command |
@@ -444,6 +519,7 @@ All CSV files use timestamps, allowing correlation across data sources:
 - Match high CPU power (RAPL) with specific SQL queries (XEvents)
 - Correlate disk I/O spikes with query execution times
 - Analyze network activity during database operations
+- Train power estimation models using `PowerModel-features-*.csv` (RAPL labels + OS-level features)
 
 ### SQLCMD Direct Queries
 
